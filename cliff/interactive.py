@@ -50,6 +50,10 @@ class InteractiveApp(cmd2.Cmd):
             self.prompt = ''
         self.command_manager = command_manager
         cmd2.Cmd.__init__(self, 'tab', stdin=stdin, stdout=stdout)
+        try:
+            self.register_postprocessing_hook(self, self._postprocess_statement)
+        except AttributeError:
+            self.precmd = self._fix_statement
 
     def _split_line(self, line):
         try:
@@ -151,7 +155,11 @@ class InteractiveApp(cmd2.Cmd):
                 if not n.startswith('do__')
                 ]
 
-    def precmd(self, statement):
+    def _postprocessing_hook(self, params):
+        params.statement = self.statement_parser.parse(self._fix_statement(param.statement.raw))
+        return params
+
+    def _fix_statement(self, statement):
         # Pre-process the parsed command in case it looks like one of
         # our subcommands, since cmd2 does not handle multi-part
         # command names by default.
@@ -163,15 +171,18 @@ class InteractiveApp(cmd2.Cmd):
             # Not a plugin command
             pass
         else:
-            if hasattr(statement, 'parsed'):
-                # Older cmd2 uses PyParsing
-                statement.parsed.command = cmd_name
-                statement.parsed.args = ' '.join(sub_argv)
-            else:
-                # cmd2 >= 0.9.1 uses shlex and gives us a Statement.
-                statement.command = cmd_name
-                statement.argv = [cmd_name] + sub_argv
-                statement.args = ' '.join(statement.argv)
+            try:
+                if hasattr(statement, 'parsed'):
+                    # Older cmd2 uses PyParsing
+                    statement.parsed.command = cmd_name
+                    statement.parsed.args = ' '.join(sub_argv)
+                else:
+                    # cmd2 == 0.9.1 uses shlex and gives us a Statement.
+                    statement.command = cmd_name
+                    statement.argv = [cmd_name] + sub_argv
+                    statement.args = ' '.join(statement.argv)
+            except AttributeError:
+                pass
         return statement
 
     def cmdloop(self):
